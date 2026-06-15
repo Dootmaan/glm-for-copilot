@@ -1,0 +1,249 @@
+{
+	"name": "glm-for-copilot",
+	"displayName": "GLM for Copilot Chat",
+	"description": "Use GLM (Z.ai / Zhipu) models in GitHub Copilot Chat — your GLM Coding Plan or the standard GLM API. Thinking mode, tool calling, BYOK.",
+	"icon": "resources/icon.png",
+	"version": "0.2.1",
+	"publisher": "QiYijiazhen",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/KiwiGaze/glm-for-copilot.git"
+	},
+	"bugs": {
+		"url": "https://github.com/KiwiGaze/glm-for-copilot/issues"
+	},
+	"homepage": "https://github.com/KiwiGaze/glm-for-copilot#readme",
+	"qna": "https://github.com/KiwiGaze/glm-for-copilot/issues",
+	"engines": {
+		"vscode": "^1.116.0",
+		"node": ">=20"
+	},
+	"categories": [
+		"AI",
+		"Chat",
+		"Programming Languages"
+	],
+	"keywords": [
+		"glm",
+		"glm-4.7",
+		"zhipu",
+		"z.ai",
+		"copilot",
+		"github copilot",
+		"copilot chat",
+		"byok",
+		"language model",
+		"thinking",
+		"reasoning",
+		"coding plan",
+		"ai",
+		"chat"
+	],
+	"activationEvents": [
+		"onUri",
+		"onStartupFinished"
+	],
+	"enabledApiProposals": [],
+	"main": "./out/extension.js",
+	"contributes": {
+		"languageModelChatProviders": [
+			{
+				"vendor": "glm",
+				"displayName": "GLM"
+			}
+		],
+		"commands": [
+			{
+				"command": "glm-copilot.setApiKey",
+				"title": "%glm-copilot.command.setApiKey%"
+			},
+			{
+				"command": "glm-copilot.getApiKey",
+				"title": "%glm-copilot.command.getApiKey%"
+			},
+			{
+				"command": "glm-copilot.clearApiKey",
+				"title": "%glm-copilot.command.clearApiKey%"
+			},
+			{
+				"command": "glm-copilot.openSettings",
+				"title": "%glm-copilot.command.openSettings%"
+			},
+			{
+				"command": "glm-copilot.showLogs",
+				"title": "%glm-copilot.command.showLogs%"
+			}
+		],
+		"walkthroughs": [
+			{
+				"id": "glmGettingStarted",
+				"title": "%glm-copilot.walkthrough.title%",
+				"description": "%glm-copilot.walkthrough.description%",
+				"steps": [
+					{
+						"id": "setApiKey",
+						"title": "%glm-copilot.walkthrough.setApiKey.title%",
+						"description": "%glm-copilot.walkthrough.setApiKey.description%",
+						"media": {
+							"markdown": "resources/walkthrough/set-api-key.md"
+						},
+						"completionEvents": [
+							"onCommand:glm-copilot.setApiKey"
+						]
+					},
+					{
+						"id": "chooseApi",
+						"title": "%glm-copilot.walkthrough.chooseApi.title%",
+						"description": "%glm-copilot.walkthrough.chooseApi.description%",
+						"media": {
+							"markdown": "resources/walkthrough/choose-api.md"
+						}
+					},
+					{
+						"id": "showModels",
+						"title": "%glm-copilot.walkthrough.showModels.title%",
+						"description": "%glm-copilot.walkthrough.showModels.description%",
+						"media": {
+							"markdown": "resources/walkthrough/show-models.md"
+						}
+					}
+				]
+			}
+		],
+		"configuration": {
+			"title": "%glm-copilot.config.title%",
+			"properties": {
+				"glm-copilot.apiMode": {
+					"type": "string",
+					"default": "coding-plan",
+					"enum": [
+						"coding-plan",
+						"standard"
+					],
+					"enumItemLabels": [
+						"%glm-copilot.config.apiMode.codingPlan.label%",
+						"%glm-copilot.config.apiMode.standard.label%"
+					],
+					"markdownEnumDescriptions": [
+						"%glm-copilot.config.apiMode.codingPlan.description%",
+						"%glm-copilot.config.apiMode.standard.description%"
+					],
+					"markdownDescription": "%glm-copilot.config.apiMode.description%"
+				},
+				"glm-copilot.region": {
+					"type": "string",
+					"default": "international",
+					"enum": [
+						"international",
+						"china"
+					],
+					"enumItemLabels": [
+						"%glm-copilot.config.region.international.label%",
+						"%glm-copilot.config.region.china.label%"
+					],
+					"markdownDescription": "%glm-copilot.config.region.description%"
+				},
+				"glm-copilot.baseUrl": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "%glm-copilot.config.baseUrl.description%"
+				},
+				"glm-copilot.maxTokens": {
+					"type": "number",
+					"default": 0,
+					"minimum": 0,
+					"description": "%glm-copilot.config.maxTokens.description%"
+				},
+				"glm-copilot.modelIdOverrides": {
+					"type": "object",
+					"default": {},
+					"additionalProperties": {
+						"type": "string"
+					},
+					"markdownDescription": "%glm-copilot.config.modelIdOverrides.description%"
+				},
+				"glm-copilot.customModels": {
+					"type": "array",
+					"default": [],
+					"markdownDescription": "%glm-copilot.config.customModels.description%",
+					"items": {
+						"anyOf": [
+							{
+								"type": "string",
+								"description": "A GLM API model id to add to the picker."
+							},
+							{
+								"type": "object",
+								"required": [
+									"id"
+								],
+								"additionalProperties": false,
+								"properties": {
+									"id": {
+										"type": "string",
+										"description": "API model id sent to GLM (required)."
+									},
+									"name": {
+										"type": "string",
+										"description": "Display name in the model picker. Defaults to the id."
+									},
+									"maxInputTokens": {
+										"type": "number",
+										"description": "Max input tokens. Defaults to 200000."
+									},
+									"maxOutputTokens": {
+										"type": "number",
+										"description": "Max output tokens. Defaults to 128000."
+									},
+									"toolCalling": {
+										"type": "boolean",
+										"description": "Whether the model supports tool calling. Defaults to true."
+									},
+									"vision": {
+										"type": "boolean",
+										"description": "Whether the model accepts image input. Defaults to false."
+									},
+									"thinking": {
+										"type": "boolean",
+										"description": "Whether the model supports thinking. Defaults to true."
+									}
+								}
+							}
+						]
+					}
+				},
+				"glm-copilot.thinking": {
+					"type": "string",
+					"default": "enabled",
+					"enum": [
+						"enabled",
+						"disabled"
+					],
+					"enumItemLabels": [
+						"%glm-copilot.config.thinking.enabled.label%",
+						"%glm-copilot.config.thinking.disabled.label%"
+					],
+					"markdownDescription": "%glm-copilot.config.thinking.description%"
+				},
+				"glm-copilot.debugLogging": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "%glm-copilot.config.debugLogging.description%"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
+		"compile": "npm run clean && tsc -p ./",
+		"watch": "tsc -watch -p ./",
+		"package": "vsce package -o dist/"
+	},
+	"devDependencies": {
+		"@types/node": "^20.0.0",
+		"@types/vscode": "^1.116.0",
+		"@vscode/vsce": "^3.2.0",
+		"typescript": "^5.6.0"
+	}
+}

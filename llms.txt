@@ -1,0 +1,39 @@
+# GLM for Copilot Chat
+
+> A Visual Studio Code extension that adds GLM (Z.ai / Zhipu) models to the GitHub Copilot Chat
+> model picker using your own API key (BYOK). It registers GLM-4.7, GLM-5, GLM-5.1, GLM-5.2, and
+> GLM-4.5 Air as language models through the native VS Code Language Model Provider API, so they
+> appear alongside GPT and Claude in the picker you already use — with agent mode, tool calling,
+> and thinking (reasoning) mode all working out of the box.
+
+Key facts:
+
+- **Type:** VS Code extension (Marketplace), published under the `glm-copilot` publisher.
+- **What it does:** lets you use GLM models inside GitHub Copilot Chat without replacing Copilot's UI.
+- **How it works:** implements `vscode.LanguageModelChatProvider`; streams OpenAI-compatible SSE from the GLM API.
+- **Dual API:** choose your **GLM Coding Plan** subscription or the pay-as-you-go **Standard API** (International `z.ai` or Mainland China `bigmodel.cn`).
+- **BYOK and secure:** your API key is stored in the OS keychain via VS Code `SecretStorage`, never in `settings.json`.
+- **Thinking mode:** GLM step-by-step reasoning streams live as a Thinking block.
+- **Zero runtime dependencies:** pure VS Code API and Node.js built-ins.
+- **License:** MIT.
+
+## Documentation
+
+- [README](README.md): installation, features, settings, and the model table.
+- [Models and settings](README.md#models): which GLM models are available per API mode, and all configuration options.
+- [Coding Plan vs Standard API](README.md#coding-plan-vs-standard-api): endpoint routing and when to use each.
+- [Changelog](CHANGELOG.md): release history.
+- [Implementation plan](PLAN.md): architecture, file map, and design decisions.
+
+## Contributing
+
+- [Contributing guide](CONTRIBUTING.md): development setup, conventions, and the pull request process.
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md): how API keys are handled and how to report a vulnerability.
+- [Support](SUPPORT.md): where to get help.
+
+## External
+
+- [GLM API documentation (Z.ai)](https://docs.z.ai)
+- [GLM Coding Plan](https://z.ai/manage-apikey/subscription)
+- [GitHub Copilot](https://github.com/features/copilot)
