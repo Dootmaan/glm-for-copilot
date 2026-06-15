@@ -5,6 +5,10 @@
 [![CI](https://github.com/KiwiGaze/glm-for-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/KiwiGaze/glm-for-copilot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)
 
+<p align="center">
+  <img src="docs/glm-for-copilot.png" alt="GLM-5.2 answering a question in the GitHub Copilot Chat panel, selected from the Copilot model picker" width="860">
+</p>
+
 **Pick GLM-4.7, GLM-5, GLM-5.1, GLM-5.2, or GLM-4.5 Air from the Copilot Chat model picker — and keep everything else Copilot already gives you.**
 
 Use your own GLM API key (BYOK) to bring Zhipu AI's GLM models into GitHub Copilot Chat. No new sidebar, no new chat UI. Just new models in the picker you already use — with agent mode, tool calling, and thinking mode all working out of the box.
