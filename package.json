@@ -235,6 +235,7 @@
 		}
 	},
 	"scripts": {
+		"vscode:prepublish": "npm run compile",
 		"clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
 		"compile": "npm run clean && tsc -p ./",
 		"watch": "tsc -watch -p ./",
