@@ -64,7 +64,11 @@ Because this extension plugs into Copilot's native Language Model Provider API, 
 
 ### Installation
 
-Install from the VS Code Marketplace or search for **"GLM for Copilot Chat"** in the Extensions panel (`Cmd/Ctrl + Shift + X`).
+Install from the **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=QiYijiazhen.glm-for-copilot)**, or search for **"GLM for Copilot Chat"** in the Extensions panel (`Cmd/Ctrl + Shift + X`). From the command line:
+
+```bash
+code --install-extension QiYijiazhen.glm-for-copilot
+```
 
 ### Usage
 
