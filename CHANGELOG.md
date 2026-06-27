@@ -2,6 +2,14 @@
 
 All notable changes to GLM Models for GitHub Copilot Chat are documented here.
 
+## 0.2.6
+
+- **Coding Plan usage tracking** - adds a GLM usage status bar plus **GLM: Refresh Usage**
+  and **GLM: Show Usage Details** commands for Session / Weekly / Web Searches quota,
+  plan, renewal, reset, and last-updated details. Visible only for the Coding Plan on the
+  International (z.ai) region. Note: this relies on z.ai usage endpoints that are not part
+  of the public API and may change without notice; failures degrade gracefully to status states.
+
 ## 0.2.5
 
 - **Marketplace identity** - moved the extension package to `yijiazhen-qi.glm-for-github-copilot-chat` and updated install links, package metadata, and release artifact names.

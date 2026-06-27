@@ -1,9 +1,9 @@
 {
 	"name": "glm-for-github-copilot-chat",
 	"displayName": "GLM Models for GitHub Copilot Chat",
-	"description": "Bring GLM (Z.ai / Zhipu) models into GitHub Copilot Chat with visible thinking. Coding Plan or Standard API.",
+	"description": "Bring GLM-5.2 and the full GLM lineup (Z.ai / Zhipu) into GitHub Copilot Chat with visible thinking. Coding Plan or Standard API.",
 	"icon": "resources/icon.png",
-	"version": "0.2.5",
+	"version": "0.2.6",
 	"publisher": "yijiazhen-qi",
 	"license": "MIT",
 	"repository": {
@@ -26,6 +26,8 @@
 	],
 	"keywords": [
 		"glm",
+		"glm-5.2",
+		"glm-5",
 		"glm-4.7",
 		"zhipu",
 		"z.ai",
@@ -73,6 +75,14 @@
 			{
 				"command": "glm-copilot.showLogs",
 				"title": "%glm-copilot.command.showLogs%"
+			},
+			{
+				"command": "glm-copilot.refreshUsage",
+				"title": "%glm-copilot.command.refreshUsage%"
+			},
+			{
+				"command": "glm-copilot.openUsageDetail",
+				"title": "%glm-copilot.command.openUsageDetail%"
 			}
 		],
 		"walkthroughs": [
@@ -230,21 +240,42 @@
 					"type": "boolean",
 					"default": false,
 					"markdownDescription": "%glm-copilot.config.debugLogging.description%"
+				},
+				"glm-copilot.usageRefreshIntervalMinutes": {
+					"type": "number",
+					"default": 15,
+					"minimum": 5,
+					"maximum": 1440,
+					"markdownDescription": "%glm-copilot.config.usageRefreshIntervalMinutes.description%"
+				},
+				"glm-copilot.showUsageStatusBar": {
+					"type": "boolean",
+					"default": true,
+					"markdownDescription": "%glm-copilot.config.showUsageStatusBar.description%"
 				}
 			}
 		}
 	},
 	"scripts": {
-		"vscode:prepublish": "npm run compile",
+		"vscode:prepublish": "pnpm run compile",
 		"clean": "node -e \"require('node:fs').rmSync('out', { recursive: true, force: true })\"",
-		"compile": "npm run clean && tsc -p ./",
+		"compile": "pnpm run clean && tsc -p ./",
+		"typecheck": "tsc --noEmit -p ./",
+		"lint": "eslint .",
 		"watch": "tsc -watch -p ./",
-		"package": "vsce package -o dist/"
+		"package": "vsce package -o dist/",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"devDependencies": {
+		"@eslint/js": "^10.0.1",
 		"@types/node": "^20.0.0",
 		"@types/vscode": "^1.116.0",
 		"@vscode/vsce": "^3.2.0",
-		"typescript": "^5.6.0"
+		"eslint": "^10.5.0",
+		"globals": "^17.7.0",
+		"typescript": "^5.6.0",
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.9"
 	}
 }
