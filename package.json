@@ -3,7 +3,7 @@
 	"displayName": "GLM Models for GitHub Copilot Chat",
 	"description": "Bring GLM-5.2 and the full GLM lineup (Z.ai / Zhipu) into GitHub Copilot Chat with visible thinking. Coding Plan or Standard API.",
 	"icon": "resources/icon.png",
-	"version": "0.2.7",
+	"version": "0.2.8",
 	"publisher": "yijiazhen-qi",
 	"license": "MIT",
 	"repository": {
@@ -164,6 +164,13 @@
 					"default": 0,
 					"minimum": 0,
 					"description": "%glm-copilot.config.maxTokens.description%"
+				},
+				"glm-copilot.maxRetries": {
+					"type": "integer",
+					"default": 3,
+					"minimum": 0,
+					"maximum": 10,
+					"markdownDescription": "%glm-copilot.config.maxRetries.description%"
 				},
 				"glm-copilot.modelIdOverrides": {
 					"type": "object",
