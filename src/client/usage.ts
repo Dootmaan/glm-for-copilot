@@ -29,27 +29,43 @@ export interface IUsageClient {
 /**
  * z.ai Coding Plan usage client. Two sequential GETs against the (reverse-engineered,
  * undocumented) usage endpoints. Subscription failure is swallowed; quota failure sets status.
+ *
+ * Both stations (z.ai international + open.bigmodel.cn china) share the same paths and JSON
+ * shape; only the host and Authorization header differ. The China monitor endpoint authenticates
+ * with the RAW API key (no `Bearer` prefix), while z.ai uses `Bearer {key}`. The scheme is detected
+ * from the request URL (which carries the region host).
+ *
+ * The host is resolved on EVERY `fetchSnapshot` call (via `resolveHost`) rather than captured at
+ * construction, so the bar follows `glm-copilot.region` changes without recreating the client. A
+ * static string is still accepted (normalized to a constant resolver) for convenience in tests. The
+ * region is resolved once per snapshot so the subscription + quota sub-requests always hit one host.
  */
 export class UsageClient implements IUsageClient {
+	private readonly resolveHost: () => string;
+
 	constructor(
-		private readonly host: string,
+		hostOrResolver: string | (() => string),
 		private readonly fetchImpl: typeof fetch = fetch,
-	) {}
+	) {
+		this.resolveHost = typeof hostOrResolver === 'string' ? () => hostOrResolver : hostOrResolver;
+	}
 
 	async fetchSnapshot(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
+		const host = this.resolveHost();
 		const [subscription, snapshot] = await Promise.all([
-			this.fetchSubscription(apiKey, signal),
-			this.fetchQuota(apiKey, signal),
+			this.fetchSubscription(host, apiKey, signal),
+			this.fetchQuota(host, apiKey, signal),
 		]);
 		return { ...snapshot, ...subscription };
 	}
 
 	private async fetchSubscription(
+		host: string,
 		apiKey: string,
 		signal?: AbortSignal,
 	): Promise<{ planName?: string; renewsAt?: string }> {
 		try {
-			const response = await this.get(`${this.host}${USAGE_PATHS.subscription}`, apiKey, signal);
+			const response = await this.get(`${host}${USAGE_PATHS.subscription}`, apiKey, signal);
 			if (!response.ok) {
 				return {};
 			}
@@ -67,22 +83,22 @@ export class UsageClient implements IUsageClient {
 		}
 	}
 
-	private async fetchQuota(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
+	private async fetchQuota(host: string, apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
 		const fetchedAt = Date.now();
 		let response: Response;
 		try {
-			response = await this.get(`${this.host}${USAGE_PATHS.quota}`, apiKey, signal);
+			response = await this.get(`${host}${USAGE_PATHS.quota}`, apiKey, signal);
 		} catch (error) {
 			// Re-throw aborts so the caller (UsageStatusBar) can swallow+log them per spec §7.2
 			// instead of rendering a server-error snapshot for a cancellation it caused.
 			if (isAbortError(error)) {
 				throw error;
 			}
-			return this.toErrorSnapshot(error, fetchedAt);
+			return this.toErrorSnapshot(error, host, fetchedAt);
 		}
 		if (!response.ok) {
-			const error = await createHttpError(response, { baseUrl: this.host });
-			return this.toErrorSnapshot(error, fetchedAt);
+			const error = await createHttpError(response, { baseUrl: host });
+			return this.toErrorSnapshot(error, host, fetchedAt);
 		}
 		let parsed: ZaiQuotaResponse;
 		try {
@@ -118,7 +134,7 @@ export class UsageClient implements IUsageClient {
 			return await this.fetchImpl(url, {
 				method: 'GET',
 				headers: {
-					Authorization: `Bearer ${apiKey}`,
+					Authorization: this.authHeader(url, apiKey),
 					Accept: 'application/json',
 				},
 				signal: controller.signal,
@@ -136,8 +152,12 @@ export class UsageClient implements IUsageClient {
 		}
 	}
 
-	private toErrorSnapshot(error: unknown, fetchedAt: number): UsageSnapshot {
-		const normalized = normalizeRequestError(error, { baseUrl: this.host });
+	private authHeader(url: string, apiKey: string): string {
+		return url.includes('bigmodel.cn') ? apiKey : `Bearer ${apiKey}`;
+	}
+
+	private toErrorSnapshot(error: unknown, host: string, fetchedAt: number): UsageSnapshot {
+		const normalized = normalizeRequestError(error, { baseUrl: host });
 		let status: UsageStatus;
 		if (normalized instanceof Error && 'kind' in normalized) {
 			const kind = (normalized as { kind: string }).kind;
