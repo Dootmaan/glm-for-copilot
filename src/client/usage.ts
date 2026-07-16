@@ -1,5 +1,5 @@
-import { USAGE_PATHS, USAGE_REQUEST_TIMEOUT_MS } from '../consts';
-import type { UsageMetric, UsageSnapshot, UsageStatus } from '../types';
+import { BALANCE_PATHS, USAGE_PATHS, USAGE_REQUEST_TIMEOUT_MS } from '../consts';
+import type { TokenPackage, UsageBalance, UsageMetric, UsageSnapshot, UsageStatus } from '../types';
 import { createHttpError, isAbortError, normalizeRequestError } from './errors';
 
 interface ZaiLimit {
@@ -22,17 +22,47 @@ interface ZaiSubscriptionResponse {
 	data?: Array<{ productName?: string; nextRenewTime?: string }>;
 }
 
+interface BigmodelAccountReport {
+	success?: boolean;
+	data?: {
+		balance?: number;
+		rechargeAmount?: number;
+		giveAmount?: number;
+		totalSpendAmount?: number;
+		frozenBalance?: number;
+		availableBalance?: number;
+	};
+}
+
+interface BigmodelTokenAccount {
+	tokenBalance?: number;
+	tokensMagnitude?: number;
+	status?: string;
+	resourcePackageName?: string;
+	suitableModel?: string;
+}
+
+interface BigmodelTokenAccountsResponse {
+	code?: number;
+	rows?: BigmodelTokenAccount[];
+}
+
+/** Contract for the usage/balance client used by {@link UsageStatusBar}. */
 export interface IUsageClient {
+	/** Fetch Coding Plan quota (session/weekly/web-searches) as a {@link UsageSnapshot}. */
 	fetchSnapshot(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot>;
+	/** Fetch Standard API balance (cash + token packages) as a snapshot with `balance` populated. */
+	fetchBalance(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot>;
 }
 
 /**
- * z.ai Coding Plan usage client. Two sequential GETs against the (reverse-engineered,
- * undocumented) usage endpoints. Subscription failure is swallowed; quota failure sets status.
+ * GLM usage + balance client. `fetchSnapshot` fetches Coding Plan quota (subscription + quota GETs);
+ * `fetchBalance` fetches Standard API cash balance + token packages (two parallel GETs).
+ * Subscription failure is swallowed; quota/balance failure sets status.
  *
  * Both stations (z.ai international + open.bigmodel.cn china) share the same paths and JSON
- * shape; only the host and Authorization header differ. The China monitor endpoint authenticates
- * with the RAW API key (no `Bearer` prefix), while z.ai uses `Bearer {key}`. The scheme is detected
+ * shapes; only the host and Authorization header differ. The China (open.bigmodel.cn) monitor
+ * endpoint authenticates with the RAW API key (no `Bearer` prefix), while z.ai uses `Bearer {key}`. The scheme is detected
  * from the request URL (which carries the region host).
  *
  * The host is resolved on EVERY `fetchSnapshot` call (via `resolveHost`) rather than captured at
@@ -50,6 +80,11 @@ export class UsageClient implements IUsageClient {
 		this.resolveHost = typeof hostOrResolver === 'string' ? () => hostOrResolver : hostOrResolver;
 	}
 
+	/**
+	 * Fetch Coding Plan usage quota. Resolves the host, then fires subscription + quota requests in
+	 * parallel; the subscription result (plan name + renewal) is merged into the quota snapshot.
+	 * Subscription failure is swallowed (best-effort); quota failure determines the final status.
+	 */
 	async fetchSnapshot(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
 		const host = this.resolveHost();
 		const [subscription, snapshot] = await Promise.all([
@@ -59,6 +94,102 @@ export class UsageClient implements IUsageClient {
 		return { ...snapshot, ...subscription };
 	}
 
+	/**
+	 * Fetch Standard API balance. Two parallel GETs against the biz gateway: a cash account report
+	 * and a token resource-package list. Either may fail independently — the account report is the
+	 * primary signal; token packages are supplementary.
+	 */
+	async fetchBalance(apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
+		const host = this.resolveHost();
+		const fetchedAt = Date.now();
+		const [accountResult, packagesResult] = await Promise.allSettled([
+			this.fetchAccountReport(host, apiKey, signal),
+			this.fetchTokenAccounts(host, apiKey, signal),
+		]);
+
+		// If the primary (account report) failed, surface its error status.
+		if (accountResult.status === 'rejected') {
+			if (isAbortError(accountResult.reason)) {
+				throw accountResult.reason;
+			}
+			return this.toErrorSnapshot(accountResult.reason, host, fetchedAt);
+		}
+		const account = accountResult.value;
+
+		// Token packages failure is non-fatal — we still show cash balance.
+		const packages = packagesResult.status === 'fulfilled' ? packagesResult.value : [];
+
+		const balance: UsageBalance = { ...account, tokenPackages: packages };
+		// No data at all → no-data; otherwise ok even if some fields are missing.
+		const hasData =
+			account.availableCash !== undefined ||
+			account.totalRecharged !== undefined ||
+			packages.length > 0;
+		return {
+			status: hasData ? 'ok' : 'no-data',
+			balance,
+			metrics: [],
+			fetchedAt,
+		};
+	}
+	/**
+	 * Fetch the cash account report (balance, recharge, spend, gift, frozen) from the biz gateway.
+	 * Throws on HTTP error so the caller can map it to an error status.
+	 */	private async fetchAccountReport(
+		host: string,
+		apiKey: string,
+		signal?: AbortSignal,
+	): Promise<Omit<UsageBalance, 'tokenPackages'>> {
+		const response = await this.get(`${host}${BALANCE_PATHS.accountReport}`, apiKey, signal);
+		if (!response.ok) {
+			const error = await createHttpError(response, { baseUrl: host });
+			throw error;
+		}
+		const parsed = (await response.json()) as BigmodelAccountReport;
+		const d = parsed?.data;
+		return {
+			availableCash: finiteOr(d?.availableBalance ?? d?.balance),
+			totalRecharged: finiteOr(d?.rechargeAmount),
+			totalSpent: finiteOr(d?.totalSpendAmount),
+			giftedAmount: finiteOr(d?.giveAmount),
+			frozenAmount: finiteOr(d?.frozenBalance),
+		};
+	}
+
+	/**
+	 * Fetch the list of token resource packages. Returns `[]` on any failure (non-fatal: cash
+	 * balance is still shown). Filters to EFFECTIVE packages (plus any with a non-null balance).
+	 */
+	private async fetchTokenAccounts(
+		host: string,
+		apiKey: string,
+		signal?: AbortSignal,
+	): Promise<TokenPackage[]> {
+		const url = `${host}${BALANCE_PATHS.tokenAccounts}?pageNum=1&pageSize=100`;
+		const response = await this.get(url, apiKey, signal);
+		if (!response.ok) {
+			return [];
+		}
+		const parsed = (await response.json()) as BigmodelTokenAccountsResponse;
+		const rows = parsed?.rows;
+		if (!Array.isArray(rows)) {
+			return [];
+		}
+		return rows
+			.filter((r) => r.status === 'EFFECTIVE' || r.tokenBalance !== undefined)
+			.map((r) => ({
+				name: r.resourcePackageName ?? 'Token Package',
+				remainingTokens: numberOr(r.tokenBalance),
+				magnitude: numberOr(r.tokensMagnitude, 1),
+				status: r.status ?? 'UNKNOWN',
+				model: r.suitableModel,
+			}));
+	}
+
+	/**
+	 * Fetch the Coding Plan subscription (plan name + renewal time). Any failure returns an empty
+	 * object — the quota snapshot still renders without plan metadata.
+	 */
 	private async fetchSubscription(
 		host: string,
 		apiKey: string,
@@ -83,6 +214,10 @@ export class UsageClient implements IUsageClient {
 		}
 	}
 
+	/**
+	 * Fetch the Coding Plan quota limits and map them to {@link UsageMetric}s. Aborts propagate;
+	 * HTTP/parse failures map to error statuses. Empty or unparseable limits map to `no-data`.
+	 */
 	private async fetchQuota(host: string, apiKey: string, signal?: AbortSignal): Promise<UsageSnapshot> {
 		const fetchedAt = Date.now();
 		let response: Response;
@@ -117,6 +252,10 @@ export class UsageClient implements IUsageClient {
 		return { status: 'ok', metrics, fetchedAt };
 	}
 
+	/**
+	 * GET a URL with the host-appropriate Authorization header, a {@link USAGE_REQUEST_TIMEOUT_MS}
+	 * timeout, and caller-signal forwarding. Re-throws aborts; converts timeout aborts to a TypeError.
+	 */
 	private async get(url: string, apiKey: string, signal?: AbortSignal): Promise<Response> {
 		const controller = new AbortController();
 		let didTimeout = false;
@@ -152,10 +291,19 @@ export class UsageClient implements IUsageClient {
 		}
 	}
 
+	/**
+	 * Build the Authorization header for a URL. China (open.bigmodel.cn) uses the RAW key;
+	 * z.ai uses `Bearer {key}`. Detected from the request URL, not the region setting, so the
+	 * header always matches the actual host.
+	 */
 	private authHeader(url: string, apiKey: string): string {
 		return url.includes('bigmodel.cn') ? apiKey : `Bearer ${apiKey}`;
 	}
 
+	/**
+	 * Map a fetch error to a {@link UsageSnapshot} error status: 401/403 → `auth-error`,
+	 * network → `network-error`, everything else → `server-error`.
+	 */
 	private toErrorSnapshot(error: unknown, host: string, fetchedAt: number): UsageSnapshot {
 		const normalized = normalizeRequestError(error, { baseUrl: host });
 		let status: UsageStatus;
@@ -178,6 +326,7 @@ export class UsageClient implements IUsageClient {
 	}
 }
 
+/** Extract the `limits` array from a quota response, tolerating both `data.limits` and top-level array shapes. */
 function extractLimits(response: ZaiQuotaResponse): ZaiLimit[] | undefined {
 	const container = response.data ?? response;
 	if (Array.isArray(container)) {
@@ -209,14 +358,36 @@ function findLimit(limits: ZaiLimit[], type: string, unit?: number): ZaiLimit | 
 	return fallback;
 }
 
+/** Coerce to a finite number, falling back to `fallback` (default 0) when not numeric. */
 function numberOr(value: unknown, fallback = 0): number {
 	return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+/** Coerce to a finite number, returning undefined when not numeric (for optional balance fields). */
+function finiteOr(value: unknown, fallback?: number): number | undefined {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return value;
+	}
+	// Reject empty/whitespace-only strings: Number("") === Number("  ") === 0, which would
+	// wrongly turn a missing balance field into a zero value. Keep valid numeric strings.
+	if (typeof value === 'string' && value.trim() !== '') {
+		const n = Number(value);
+		if (Number.isFinite(n)) {
+			return n;
+		}
+	}
+	return fallback;
+}
+
+/** Epoch-ms of the next UTC midnight on the 1st of the month (default reset for monthly web-search windows lacking a `nextResetTime`). */
 function nextUtcFirstOfMonthMs(now: Date = new Date()): number {
 	return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
 
+/**
+ * Map raw `TOKENS_LIMIT` / `TIME_LIMIT` entries to the ordered metric list
+ * (`session` → `weekly` → `web-searches`), skipping any window that is absent.
+ */
 function buildMetrics(limits: ZaiLimit[]): UsageMetric[] {
 	const metrics: UsageMetric[] = [];
 	const session = findLimit(limits, 'TOKENS_LIMIT', 3);

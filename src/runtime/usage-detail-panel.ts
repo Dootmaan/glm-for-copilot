@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { t } from '../i18n';
+import { getRegion } from '../config';
 import { barWidthCss } from './usage-detail-html';
 import type { UsagePanelMessage } from './usage-detail-html';
 import type { UsageStatusBar } from './usage-bar';
@@ -39,6 +40,10 @@ export class UsageDetailPanel {
 		this.panel.onDidDispose(() => this.dispose(), undefined, context.subscriptions);
 	}
 
+		/**
+	 * Reveal the singleton panel if it exists, otherwise create one bound to `bar`.
+	 * The panel subscribes to `bar.onDidChangeSnapshot` and re-renders on every push.
+	 */
 	static createOrShow(context: vscode.ExtensionContext, bar: UsageStatusBar): void {
 		if (UsageDetailPanel.currentPanel) {
 			UsageDetailPanel.currentPanel.panel.reveal(vscode.ViewColumn.Active, false);
@@ -56,6 +61,7 @@ export class UsageDetailPanel {
 		UsageDetailPanel.currentPanel = new UsageDetailPanel(panel, context, bar);
 	}
 
+	/** Handle a webview post-message: `refresh` triggers a bar refresh, `setKey` opens the key prompt. */
 	private async onMessage(message: { type: string }): Promise<void> {
 		if (message.type === 'refresh') {
 			await this.bar.refresh();
@@ -64,6 +70,10 @@ export class UsageDetailPanel {
 		}
 	}
 
+	/**
+	 * Re-render the panel HTML. Suppresses the transition to `loading` when a non-loading snapshot
+	 * is already showing (avoids fltransform on background refresh). Caches the last message.
+	 */
 	private render(message: UsagePanelMessage | null): void {
 		if (message?.status === 'loading' && this.lastMessage != null && this.lastMessage.status !== 'loading') {
 			return;
@@ -73,6 +83,10 @@ export class UsageDetailPanel {
 		this.panel.webview.html = this.buildHtml(message);
 	}
 
+	/**
+	 * Build the full panel HTML document. Uses a gate-failed fallback message when `message` is null.
+	 * Inline scripts run under a nonce CSP; reset-countdown timers are hydrated via `resetsAtMap`.
+	 */
 	private buildHtml(message: UsagePanelMessage | null): string {
 		const nonce = getNonce();
 		const theme = themeKind();
@@ -80,6 +94,7 @@ export class UsageDetailPanel {
 		const effective: UsagePanelMessage = message ?? {
 			status: 'no-data',
 			metrics: [],
+			currency: getRegion() === 'china' ? '¥' : '$',
 			offline: false,
 			theme,
 			strings: usagePanelStrings(),
@@ -140,6 +155,7 @@ export class UsageDetailPanel {
 </html>`;
 	}
 
+	/** Dispose subscriptions, theme listener, and the webview panel; clear the singleton reference. */
 	dispose(): void {
 		this.subscription?.dispose();
 		this.themeSub?.dispose();
@@ -148,6 +164,7 @@ export class UsageDetailPanel {
 	}
 }
 
+/** Render the HTML body for the `ok` status: plan header, metric bars, optional balance section, footer. */
 function renderOkBody(msg: UsagePanelMessage): string {
 	const s = msg.strings;
 	const lines: string[] = [];
@@ -166,6 +183,9 @@ function renderOkBody(msg: UsagePanelMessage): string {
 			${metric.resetsAt ? `<div id="resets-${escapeHtml(metric.kind)}" class="resets"></div>` : ''}
 		</div>`);
 	}
+	if (msg.balance) {
+		lines.push(renderBalanceBody(msg));
+	}
 	if (msg.lastUpdated !== undefined) {
 		lines.push(`<div class="last-updated">${escapeHtml(s.lastUpdated.replace('{0}', new Date(msg.lastUpdated).toLocaleTimeString()))}</div>`);
 	}
@@ -175,6 +195,39 @@ function renderOkBody(msg: UsagePanelMessage): string {
 	return lines.join('');
 }
 
+/** Render the HTML for the Standard API balance section: cash rows (right-aligned values) + token packages. */
+function renderBalanceBody(msg: UsagePanelMessage): string {
+	const s = msg.strings;
+	const b = msg.balance!;
+	const c = msg.currency;
+	const lines: string[] = [`<div class="balance-section"><h2>${escapeHtml(s.balanceSection)}</h2>`];
+	if (b.availableCash !== undefined) {
+		lines.push(`<div class="balance-row"><span>${escapeHtml(s.balanceAvailable)}</span><span class="balance-value">${escapeHtml(c)}${escapeHtml(b.availableCash)}</span></div>`);
+	}
+	if (b.totalRecharged !== undefined) {
+		lines.push(`<div class="balance-row"><span>${escapeHtml(s.balanceRecharged)}</span><span class="balance-value">${escapeHtml(c)}${escapeHtml(b.totalRecharged)}</span></div>`);
+	}
+	if (b.giftedAmount !== undefined && b.giftedAmount !== '0') {
+		lines.push(`<div class="balance-row"><span>${escapeHtml(s.balanceGifted)}</span><span class="balance-value">${escapeHtml(c)}${escapeHtml(b.giftedAmount)}</span></div>`);
+	}
+	if (b.totalSpent !== undefined) {
+		lines.push(`<div class="balance-row"><span>${escapeHtml(s.balanceSpent)}</span><span class="balance-value">${escapeHtml(c)}${escapeHtml(b.totalSpent)}</span></div>`);
+	}
+	if (b.frozenAmount !== undefined && b.frozenAmount !== '0') {
+		lines.push(`<div class="balance-row"><span>${escapeHtml(s.balanceFrozen)}</span><span class="balance-value">${escapeHtml(c)}${escapeHtml(b.frozenAmount)}</span></div>`);
+	}
+	if (b.tokenPackages.length > 0) {
+		lines.push(`<div class="balance-packages">${escapeHtml(s.balancePackages)}</div>`);
+		for (const pkg of b.tokenPackages) {
+			const modelLabel = pkg.model ? ` <span class="pkg-model">(${escapeHtml(pkg.model)})</span>` : '';
+			lines.push(`<div class="balance-row"><span>${escapeHtml(pkg.name)}${modelLabel}</span><span class="balance-value">${escapeHtml(pkg.tokens)} tokens</span></div>`);
+		}
+	}
+	lines.push('</div>');
+	return lines.join('');
+}
+
+/** Render the HTML body for non-ok statuses: a centered message, plus a Set-Key button on auth errors. */
 function renderStatusBody(msg: UsagePanelMessage): string {
 	const s = msg.strings;
 	if (msg.status === 'auth-error') {
@@ -189,6 +242,7 @@ function renderStatusBody(msg: UsagePanelMessage): string {
 	return `<div class="status-message"><p>${escapeHtml(text)}</p></div>`;
 }
 
+/** Collect `{ kind: resetsAt }` for metrics that have a reset time, to hydrate the client-side countdown. */
 function resetsAtMap(msg: UsagePanelMessage): Record<string, number> {
 	const map: Record<string, number> = {};
 	for (const m of msg.metrics) {
@@ -199,6 +253,7 @@ function resetsAtMap(msg: UsagePanelMessage): Record<string, number> {
 	return map;
 }
 
+/** Generate the panel's theme CSS string, switching colors by dark/light token. */
 function themeCss(theme: 'dark' | 'light'): string {
 	const dark = theme === 'dark';
 	const fg = dark ? '#cccccc' : '#313033';
@@ -225,22 +280,32 @@ function themeCss(theme: 'dark' | 'light'): string {
 		.offline { color: ${muted}; font-size: 0.8rem; font-style: italic; margin-top: 4px; }
 		.status-message { text-align: center; padding: 40px 16px; color: ${muted}; }
 		.status-message p { margin-bottom: 16px; }
+		.balance-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid ${barBg}; }
+		.balance-section h2 { font-size: 1rem; margin-bottom: 12px; color: ${fg}; }
+		.balance-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; }
+		.balance-value { font-weight: 600; }
+		.balance-packages { margin-top: 12px; font-weight: 600; font-size: 0.9rem; color: ${muted}; }
+		.pkg-model { font-weight: 400; color: ${muted}; font-size: 0.8rem; }
 	`;
 }
 
+/** Map the VS Code color theme to a dark/light token (high-contrast counted as dark). */
 function themeKind(): 'dark' | 'light' {
 	const kind = vscode.window.activeColorTheme.kind;
 	return kind === vscode.ColorThemeKind.Dark || kind === vscode.ColorThemeKind.HighContrast ? 'dark' : 'light';
 }
 
+/** Generate a CSP nonce for the panel's `<style>` / `<script>` elements. */
 function getNonce(): string {
 	return randomBytes(16).toString('base64');
 }
 
+/** Escape `& < > " '` for safe interpolation into HTML. */
 function escapeHtml(s: string): string {
 	return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
+/** JSON-stringify a value for inline `<script>` interpolation, escaping `<` to prevent tag-break-out. */
 function jsonForScript(value: unknown): string {
 	return JSON.stringify(value).replace(/</g, '\\u003c');
 }

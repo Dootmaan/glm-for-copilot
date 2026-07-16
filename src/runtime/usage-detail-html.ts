@@ -1,5 +1,7 @@
-import type { UsageMetric, UsageSnapshot, UsageStatus } from '../types';
+import type { TokenPackage, UsageBalance, UsageMetric, UsageSnapshot, UsageStatus } from '../types';
+import { formatAmount, formatTokens } from './format';
 
+/** Render-ready metric row (session / weekly / web-searches) for the detail panel. */
 export interface UsageMetricView {
 	kind: 'session' | 'weekly' | 'web-searches';
 	label: string;
@@ -10,11 +12,32 @@ export interface UsageMetricView {
 	resetsAt?: number;
 }
 
+/** Render-ready token resource package row with a pre-formatted token count. */
+export interface TokenPackageView {
+	name: string;
+	tokens: string;
+	status: string;
+	model?: string;
+}
+
+/** Render-ready cash balance section (all amounts are pre-formatted strings with currency). */
+export interface UsageBalanceView {
+	availableCash?: string;
+	totalRecharged?: string;
+	totalSpent?: string;
+	giftedAmount?: string;
+	frozenAmount?: string;
+	tokenPackages: TokenPackageView[];
+}
+
 export interface UsagePanelMessage {
 	status: UsageStatus;
 	planName?: string;
 	renewsAt?: string;
 	metrics: UsageMetricView[];
+	balance?: UsageBalanceView;
+	/** Currency symbol for balance amounts: `$` (international) or `¥` (china). */
+	currency: string;
 	lastUpdated?: number;
 	offline: boolean;
 	theme: 'dark' | 'light';
@@ -34,6 +57,13 @@ export interface UsagePanelStrings {
 	window: Record<UsageMetric['kind'], string>;
 	label: Record<UsageMetric['kind'], string>;
 	status: Record<UsageStatus, string>;
+	balanceSection: string;
+	balanceAvailable: string;
+	balanceRecharged: string;
+	balanceSpent: string;
+	balanceGifted: string;
+	balanceFrozen: string;
+	balancePackages: string;
 }
 
 /**
@@ -46,6 +76,7 @@ export function buildUsageMessage(
 	offline: boolean,
 	strings: UsagePanelStrings,
 	theme: 'dark' | 'light',
+	currency: string,
 ): UsagePanelMessage | null {
 	if (snapshot === null) {
 		return null;
@@ -55,6 +86,8 @@ export function buildUsageMessage(
 		planName: snapshot.planName,
 		renewsAt: snapshot.renewsAt,
 		metrics: snapshot.metrics.map(toMetricView, strings),
+		balance: snapshot.balance ? toBalanceView(snapshot.balance) : undefined,
+		currency,
 		lastUpdated: snapshot.status === 'ok' ? snapshot.fetchedAt : undefined,
 		offline,
 		theme,
@@ -62,6 +95,7 @@ export function buildUsageMessage(
 	};
 }
 
+/** Map a {@link UsageMetric} to a {@link UsageMetricView}, pulling labels from `this` (the strings bag). */
 function toMetricView(this: UsagePanelStrings, metric: UsageMetric): UsageMetricView {
 	const isPercent = metric.kind === 'session' || metric.kind === 'weekly';
 	return {
@@ -72,6 +106,29 @@ function toMetricView(this: UsagePanelStrings, metric: UsageMetric): UsageMetric
 		limit: metric.limit,
 		isPercent,
 		resetsAt: metric.resetsAt,
+	};
+}
+
+/** Map a {@link UsageBalance} to a {@link UsageBalanceView} with formatted amounts and packages. */
+function toBalanceView(balance: UsageBalance): UsageBalanceView {
+	return {
+		availableCash: balance.availableCash !== undefined ? formatAmount(balance.availableCash) : undefined,
+		totalRecharged: balance.totalRecharged !== undefined ? formatAmount(balance.totalRecharged) : undefined,
+		totalSpent: balance.totalSpent !== undefined ? formatAmount(balance.totalSpent) : undefined,
+		giftedAmount: balance.giftedAmount !== undefined ? formatAmount(balance.giftedAmount) : undefined,
+		frozenAmount: balance.frozenAmount !== undefined ? formatAmount(balance.frozenAmount) : undefined,
+		tokenPackages: balance.tokenPackages.map(toPackageView),
+	};
+}
+
+/** Map a {@link TokenPackage} to a {@link TokenPackageView}, formatting the token count compactly. */
+function toPackageView(pkg: TokenPackage): TokenPackageView {
+	const tokens = pkg.remainingTokens * pkg.magnitude;
+	return {
+		name: pkg.name,
+		tokens: formatTokens(tokens),
+		status: pkg.status,
+		model: pkg.model,
 	};
 }
 

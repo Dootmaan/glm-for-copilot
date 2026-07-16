@@ -44,25 +44,35 @@ export const EXTERNAL_URLS = {
 } as const;
 
 /**
- * Host roots for the Coding Plan usage API. Both stations expose the SAME paths (see USAGE_PATHS)
- * and JSON shape (`TOKENS_LIMIT` unit 3/6 + `TIME_LIMIT`); only the host differs. The China host
- * (open.bigmodel.cn) is verified to share the quota backend with z.ai (cc-switch / cc-zhipu-hud).
+ * Host roots for the usage + balance APIs. Both stations expose the same paths
+ * (USAGE_PATHS + BALANCE_PATHS) and JSON shapes; only the host differs.
  *
- * NOTE: the China monitor endpoint authenticates with the RAW API key (no `Bearer` prefix),
- * whereas z.ai uses `Bearer {key}`. This is handled in `UsageClient` via host detection.
+ * Auth scheme: the China (open.bigmodel.cn) monitor endpoint uses the RAW API key
+ * (no `Bearer` prefix); z.ai and all balance endpoints use `Bearer {key}`.
+ * Handled in `UsageClient.authHeader` via host detection.
  */
 export const USAGE_HOSTS = {
 	international: 'https://api.z.ai',
 	china: 'https://open.bigmodel.cn',
 } as const;
 
+/** Paths for the Coding Plan usage API (subscription + quota). Both stations use the same paths. */
 export const USAGE_PATHS = {
 	subscription: '/api/biz/subscription/list',
 	quota: '/api/monitor/usage/quota/limit',
 } as const;
 
-export const USAGE_MIN_REFRESH_MINUTES = 5;
-export const USAGE_DEFAULT_REFRESH_MINUTES = 15;
+/**
+ * Paths for the Standard API balance query. Both stations expose the same endpoints
+ * and JSON shapes. Coding Plan uses USAGE_PATHS; Standard API uses BALANCE_PATHS.
+ */
+export const BALANCE_PATHS = {
+	accountReport: '/api/biz/account/query-customer-account-report',
+	tokenAccounts: '/api/biz/tokenAccounts/list/my',
+} as const;
+
+export const USAGE_MIN_REFRESH_MINUTES = 1;
+export const USAGE_DEFAULT_REFRESH_MINUTES = 5;
 export const USAGE_MAX_REFRESH_MINUTES = 1440;
 export const USAGE_CACHE_STALE_MS = 60 * 60 * 1000;
 export const USAGE_MANUAL_DEBOUNCE_MS = 30 * 1000;
